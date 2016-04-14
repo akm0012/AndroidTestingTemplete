@@ -1,0 +1,85 @@
+apply plugin: 'jacoco'
+// Enables code coverage for JVM tests.
+// Android Gradle Plugin out of the box supports only code coverage for instrumentation tests.
+project.afterEvaluate {
+    // Grab all build types and product flavors
+    def buildTypes = android.buildTypes.collect { type -> type }
+    def productFlavors = android.productFlavors.collect { flavor -> flavor.name }
+    // When no product flavors defined, use empty
+    if (!productFlavors) productFlavors.add('')
+    productFlavors.each { productFlavorName ->
+        buildTypes.each { buildType ->
+            def buildTypeName = buildType.name
+            def sourceName, sourcePath
+            if (!productFlavorName) {
+                sourceName = sourcePath = "${buildTypeName}"
+            } else {
+                sourceName = "${productFlavorName}${buildTypeName.capitalize()}"
+                sourcePath = "${productFlavorName}/${buildTypeName}"
+            }
+            def testTaskName = "test${sourceName.capitalize()}UnitTest"
+            def coverageTaskName = "${testTaskName}Coverage"
+            def functionTestTaskName = "connected${sourceName.capitalize()}AndroidTest"
+            def taskClassDirectories = fileTree(
+                    dir: "${project.buildDir}/intermediates/classes/${sourcePath}",
+                    excludes: ['**/R.class',
+                               '**/R$*.class',
+                               'android/databinding/**/*.class',
+                               'com/android/databinding/**/*.class',
+                               '**/*$ViewInjector*.*',
+                               '**/*$ViewBinder*.*',
+                               '**/BuildConfig.*',
+                               '**/Manifest*.*',
+                               '**/*$Lambda$*.*',
+                               '**/*Module*.*',
+                               '**/*_MembersInjector*.*',
+                               '**/Dagger*.class',
+                               '**/*_Factory*.*',
+                               '**/*_Provide*.*'
+                    ]
+            )
+            // Create coverage task of form 'testFlavorTypeCoverage' depending on 'testFlavorTypeUnitTest'
+            task "${coverageTaskName}"(type: JacocoReport, dependsOn: "$testTaskName") {
+                group = 'Reporting'
+                description = "Generate Jacoco coverage reports for the ${sourceName.capitalize()} build."
+                classDirectories = taskClassDirectories
+                def coverageSourceDirs = [
+                        'src/main/java',
+                        "src/$productFlavorName/java",
+                        "src/$buildTypeName/java"
+                ]
+                def jacocoFiles = ["${project.buildDir}/jacoco/${testTaskName}.exec"]
+                additionalSourceDirs = files(coverageSourceDirs)
+                sourceDirectories = files(coverageSourceDirs)
+                executionData = files(jacocoFiles)
+                reports {
+                    xml.enabled = true
+                    html.enabled = true
+                }
+            }
+            if(buildType.isTestCoverageEnabled()) {
+                task "testFull${testTaskName.capitalize()}Coverage"(type: JacocoReport, dependsOn: ["$functionTestTaskName", "$testTaskName"]) {
+                    group = 'Reporting'
+                    description = "Generate full Jacoco coverage reports for the ${sourceName.capitalize()} build for both instrumented and unit tests."
+                    classDirectories = taskClassDirectories
+                    def coverageSourceDirs = [
+                            'src/main/java',
+                            "src/$productFlavorName/java",
+                            "src/$buildTypeName/java"
+                    ]
+                    def jacocoFiles = [
+                            "${project.buildDir}/jacoco/${testTaskName}.exec",
+                            "${project.buildDir}/outputs/code-coverage/connected/coverage.ec"
+                    ]
+                    additionalSourceDirs = files(coverageSourceDirs)
+                    sourceDirectories = files(coverageSourceDirs)
+                    executionData = files(jacocoFiles)
+                    reports {
+                        xml.enabled = true
+                        html.enabled = true
+                    }
+                }
+            }
+        }
+    }
+}
